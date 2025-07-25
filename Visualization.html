@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Point Cloud Comparison - Normal vs Curvature vs Subsample vs Raw</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        select, input[type="range"], input[type="file"] {
+            width: 200px;
+            padding: 5px;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+        }
+        
+        input[type="file"] {
+            padding: 8px;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 5px 5px 0;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        button.active {
+            background: #2196F3;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 300px;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            display: none;
+        }
+        
+        .file-section {
+            border: 1px solid #444;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .file-section h4 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+        }
+        
+        #stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <h3>Point Cloud Comparison Tool</h3>
+            
+            <div class="file-section">
+                <h4>Raw Point Cloud</h4>
+                <input type="file" id="rawFile" accept=".txt,.asc,.xyz" />
+            </div>
+            
+            <div class="file-section">
+                <h4>Normal Data</h4>
+                <input type="file" id="normalFile" accept=".txt,.asc,.xyz" />
+            </div>
+            
+            <div class="file-section">
+                <h4>Curvature Data</h4>
+                <input type="file" id="curvatureFile" accept=".txt,.asc,.xyz" />
+            </div>
+            
+            <div class="file-section">
+                <h4>Subsample Data</h4>
+                <input type="file" id="subsampleFile" accept=".txt,.asc,.xyz" />
+            </div>
+            
+            <div class="control-group">
+                <button id="loadBtn">Load All Point Clouds</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Visualization Mode:</label>
+                <button id="rawBtn" class="mode-btn">Raw Points</button>
+                <button id="normalBtn" class="mode-btn">Normal Vectors</button>
+                <button id="curvatureBtn" class="mode-btn">Curvature</button>
+                <button id="subsampleBtn" class="mode-btn">Subsample</button>
+            </div>
+            
+            <div class="control-group">
+                <label for="pointSize">Point Size:</label>
+                <input type="range" id="pointSize" min="0.001" max="0.1" step="0.001" value="0.01">
+                <span id="pointSizeValue">0.01</span>
+            </div>
+            
+            <div class="control-group">
+                <label for="colorMode">Color Mode:</label>
+                <select id="colorMode">
+                    <option value="original">Original Colors</option>
+                    <option value="height">Height-based</option>
+                    <option value="normal">Normal-based</option>
+                    <option value="curvature">Curvature-based</option>
+                    <option value="uniform">Uniform Color</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="info">
+            <h4>CloudCompare Data Format:</h4>
+            <p><strong>Expected columns:</strong><br>
+            X, Y, Z, R, G, B, curvature, Nx, Ny, Nz</p>
+            <p><strong>Mouse Controls:</strong></p>
+            <p>• Left click + drag: Rotate</p>
+            <p>• Right click + drag: Pan</p>
+            <p>• Scroll: Zoom</p>
+        </div>
+        
+        <div id="stats">
+            <h4>Statistics</h4>
+            <div id="statsContent">No data loaded</div>
+        </div>
+        
+        <div id="loading">Loading point cloud data...</div>
+    </div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let pointClouds = {
+            raw: null,
+            normal: null,
+            curvature: null,
+            subsample: null
+        };
+        let currentMode = 'raw';
+        let loadedData = {};
+
+        // Initialize Three.js scene
+        function initScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.001, 1000);
+            camera.position.set(0, 0, 10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Orbit controls using mouse 
+            setupControls();
+
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(10, 10, 5);
+            scene.add(directionalLight);
+
+            animate();
+        }
+
+        // Orbit controls
+        function setupControls() {
+            let isMouseDown = false;
+            let isRightMouseDown = false;
+            let mouseX = 0, mouseY = 0;
+            let spherical = new THREE.Spherical();
+            let target = new THREE.Vector3(0, 0, 0);
+            let panOffset = new THREE.Vector3();
+            
+            function updateSpherical() {
+                const offset = new THREE.Vector3().subVectors(camera.position, target);
+                spherical.setFromVector3(offset);
+            }
+            
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('wheel', onWheel);
+            renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            function onMouseDown(event) {
+                if (event.button === 0) {
+                    isMouseDown = true;
+                } else if (event.button === 2) {
+                    isRightMouseDown = true;
+                }
+                mouseX = event.clientX;
+                mouseY = event.clientY;
+                updateSpherical();
+            }
+
+            function onMouseMove(event) {
+                if (isMouseDown) {
+                    const deltaX = event.clientX - mouseX;
+                    const deltaY = event.clientY - mouseY;
+                    
+                    const rotateSpeed = 0.005;
+                    spherical.theta -= deltaX * rotateSpeed;
+                    spherical.phi += deltaY * rotateSpeed;
+                    
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+                    
+                    const offset = new THREE.Vector3().setFromSpherical(spherical);
+                    camera.position.copy(target).add(offset);
+                    camera.lookAt(target);
+                }
+                
+                if (isRightMouseDown) {
+                    const deltaX = event.clientX - mouseX;
+                    const deltaY = event.clientY - mouseY;
+                    
+                    const panSpeed = spherical.radius * 0.0001;
+                    
+                    const cameraRight = new THREE.Vector3();
+                    const cameraUp = new THREE.Vector3();
+                    camera.getWorldDirection(cameraRight);
+                    cameraRight.cross(camera.up).normalize();
+                    cameraUp.copy(camera.up);
+                    
+                    const panX = cameraRight.clone().multiplyScalar(-deltaX * panSpeed);
+                    const panY = cameraUp.clone().multiplyScalar(deltaY * panSpeed);
+                    
+                    target.add(panX).add(panY);
+                    camera.position.add(panX).add(panY);
+                }
+                
+                mouseX = event.clientX;
+                mouseY = event.clientY;
+            }
+
+            function onMouseUp() {
+                isMouseDown = false;
+                isRightMouseDown = false;
+            }
+
+            function onWheel(event) {
+                const zoomSpeed = 0.1;
+                const direction = event.deltaY > 0 ? 1 : -1;
+                
+                spherical.radius *= (1 + direction * zoomSpeed);
+                spherical.radius = Math.max(0.1, Math.min(100, spherical.radius));
+                
+                const offset = new THREE.Vector3().setFromSpherical(spherical);
+                camera.position.copy(target).add(offset);
+                camera.lookAt(target);
+                
+                event.preventDefault();
+            }
+            
+            window.setOrbitTarget = function(newTarget) {
+                target.copy(newTarget);
+                updateSpherical();
+            };
+        }
+
+        // Parse CloudCompare ASCII format
+        function parsePointCloudData(text, type) {
+            const lines = text.trim().split('\n');
+            const points = [];
+            const colors = [];
+            const normals = [];
+            const curvatures = [];
+            
+            console.log(`Parsing ${type} data: ${lines.length} lines`);
+            
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            let minZ = Infinity, maxZ = -Infinity;
+            let minCurv = Infinity, maxCurv = -Infinity;
+            let validPoints = 0;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                // Skip headers
+                if (line.startsWith('//') || line.includes('X,Y,Z')) {
+                    console.log(`Skipping header line ${i}: ${line}`);
+                    continue;
+                }
+                
+                // Parse comma separated values
+                const values = line.split(',').map(v => parseFloat(v.trim()));
+                
+                if (values.length < 3 || values.some(v => isNaN(v))) {
+                    continue;
+                }
+                
+                // CloudCompare format: X,Y,Z,R,G,B,curvature,Nx,Ny,Nz
+                const x = values[0], y = values[1], z = values[2];
+                points.push(x, y, z);
+                
+                // Track bounds
+                minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+                
+                // RGB colors (normalize from 0-255 to 0-1)
+                if (values.length >= 6) {
+                    const r = values[3] / 255.0;
+                    const g = values[4] / 255.0;
+                    const b = values[5] / 255.0;
+                    colors.push(r, g, b);
+                } else {
+                    colors.push(0.7, 0.7, 0.7);
+                }
+                
+                // Curvature value
+                if (values.length >= 7) {
+                    const curv = values[6];
+                    curvatures.push(curv);
+                    minCurv = Math.min(minCurv, curv);
+                    maxCurv = Math.max(maxCurv, curv);
+                }
+                
+                // Normal vectors
+                if (values.length >= 10) {
+                    normals.push(values[7], values[8], values[9]);
+                }
+                
+                validPoints++;
+            }
+            
+            console.log(`${type}: ${validPoints} valid points parsed`);
+            console.log(`Bounds: X(${minX.toFixed(2)}, ${maxX.toFixed(2)}) Y(${minY.toFixed(2)}, ${maxY.toFixed(2)}) Z(${minZ.toFixed(2)}, ${maxZ.toFixed(2)})`);
+            if (curvatures.length > 0) {
+                console.log(`Curvature range: ${minCurv.toFixed(6)} to ${maxCurv.toFixed(6)}`);
+            }
+            
+            return { 
+                points, 
+                colors, 
+                normals,
+                curvatures,
+                curvatureRange: { min: minCurv, max: maxCurv },
+                bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+                pointCount: validPoints
+            };
+        }
+
+        // Create point cloud geometry
+        function createPointCloud(data, type) {
+            if (!data.points || data.points.length === 0) {
+                console.warn(`No points found for ${type}`);
+                return null;
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.points, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 3));
+            
+            if (data.normals.length > 0) {
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+            }
+
+            geometry.computeBoundingBox();
+
+            const material = new THREE.PointsMaterial({
+                size: parseFloat(document.getElementById('pointSize').value),
+                vertexColors: true,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            const pointCloud = new THREE.Points(geometry, material);
+            pointCloud.name = type;
+            
+            console.log(`Created ${type} point cloud with ${data.pointCount} points`);
+            return pointCloud;
+        }
+
+        // Position the camera to view the point cloud
+        function fitCameraToPointCloud(pointCloud) {
+            if (!pointCloud || !pointCloud.geometry.boundingBox) return;
+            
+            const box = pointCloud.geometry.boundingBox;
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            if (window.setOrbitTarget) {
+                window.setOrbitTarget(center);
+            }
+            
+            const distance = maxDim * 1.5;
+            
+            camera.position.set(
+                center.x + distance * 0.7, 
+                center.y + distance * 0.3, 
+                center.z + distance * 0.8
+            );
+            camera.lookAt(center);
+            
+            camera.near = distance * 0.001;
+            camera.far = distance * 20;
+            camera.updateProjectionMatrix();
+        }
+
+        // Update statistics display
+        function updateStats() {
+            const statsContent = document.getElementById('statsContent');
+            let html = '';
+            
+            for (const [type, data] of Object.entries(loadedData)) {
+                if (data) {
+                    html += `<strong>${type.toUpperCase()}:</strong><br>`;
+                    html += `Points: ${data.pointCount.toLocaleString()}<br>`;
+                    if (data.curvatures && data.curvatures.length > 0) {
+                        html += `Curvature: ${data.curvatureRange.min.toFixed(6)} - ${data.curvatureRange.max.toFixed(6)}<br>`;
+                    }
+                    if (data.normals && data.normals.length > 0) {
+                        html += `Normals: ✓<br>`;
+                    }
+                    html += '<br>';
+                }
+            }
+            
+            statsContent.innerHTML = html || 'No data loaded';
+        }
+
+        // Load and process files
+        async function loadPointClouds() {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            
+            const files = {
+                raw: document.getElementById('rawFile').files[0],
+                normal: document.getElementById('normalFile').files[0],
+                curvature: document.getElementById('curvatureFile').files[0],
+                subsample: document.getElementById('subsampleFile').files[0]
+            };
+
+            let loadedCount = 0;
+            let firstValidCloud = null;
+
+            try {
+                for (const [type, file] of Object.entries(files)) {
+                    if (file) {
+                        console.log(`Loading ${type} file: ${file.name}`);
+                        const text = await file.text();
+                        
+                        if (text.length === 0) {
+                            console.warn(`${type} file is empty`);
+                            continue;
+                        }
+                        
+                        const data = parsePointCloudData(text, type);
+                        
+                        if (data.pointCount === 0) {
+                            console.warn(`No valid points found in ${type} file`);
+                            continue;
+                        }
+                        
+                        loadedData[type] = data;
+                        
+                        if (pointClouds[type]) {
+                            scene.remove(pointClouds[type]);
+                        }
+                        
+                        pointClouds[type] = createPointCloud(data, type);
+                        
+                        if (pointClouds[type]) {
+                            loadedCount++;
+                            
+                            if (!firstValidCloud) {
+                                firstValidCloud = pointClouds[type];
+                                fitCameraToPointCloud(firstValidCloud);
+                            }
+                            
+                            if (type === currentMode) {
+                                scene.add(pointClouds[type]);
+                            }
+                        }
+                    }
+                }
+                
+                if (loadedCount === 0) {
+                    alert('No valid point cloud data found. Please check your file formats.');
+                } else {
+                    console.log(`Successfully loaded ${loadedCount} point clouds`);
+                    
+                    const availableModes = Object.keys(pointClouds).filter(key => pointClouds[key] !== null);
+                    if (availableModes.length > 0 && !pointClouds[currentMode]) {
+                        switchMode(availableModes[0]);
+                    }
+                }
+                
+                updateModeButtons();
+                updateStats();
+                
+            } catch (error) {
+                console.error('Error loading point clouds:', error);
+                alert(`Error loading point cloud files: ${error.message}`);
+            }
+            
+            loading.style.display = 'none';
+        }
+
+        // Change visualization mode
+        function switchMode(newMode) {
+            if (!pointClouds[newMode]) {
+                alert(`${newMode} point cloud not loaded`);
+                return;
+            }
+            
+            if (pointClouds[currentMode]) {
+                scene.remove(pointClouds[currentMode]);
+            }
+            
+            currentMode = newMode;
+            scene.add(pointClouds[currentMode]);
+            
+            // Auto-select appropriate color mode
+            if (newMode === 'normal') {
+                document.getElementById('colorMode').value = 'normal';
+            } else if (newMode === 'curvature') {
+                document.getElementById('colorMode').value = 'curvature';
+            }
+            
+            updateColorMode();
+            updateModeButtons();
+        }
+
+        // Update mode button states
+        function updateModeButtons() {
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+                
+                const mode = btn.id.replace('Btn', '');
+                if (!pointClouds[mode]) {
+                    btn.style.opacity = '0.5';
+                    btn.disabled = true;
+                } else {
+                    btn.style.opacity = '1';
+                    btn.disabled = false;
+                }
+            });
+            
+            const currentBtn = document.getElementById(currentMode + 'Btn');
+            if (currentBtn && pointClouds[currentMode]) {
+                currentBtn.classList.add('active');
+            }
+        }
+
+        // Update point size
+        function updatePointSize() {
+            const size = parseFloat(document.getElementById('pointSize').value);
+            document.getElementById('pointSizeValue').textContent = size.toFixed(3);
+            
+            Object.values(pointClouds).forEach(pointCloud => {
+                if (pointCloud && pointCloud.material) {
+                    pointCloud.material.size = size;
+                }
+            });
+        }
+
+        // Update colors 
+        function updateColorMode() {
+            const colorMode = document.getElementById('colorMode').value;
+            const currentPointCloud = pointClouds[currentMode];
+            
+            if (!currentPointCloud || !loadedData[currentMode]) return;
+            
+            const data = loadedData[currentMode];
+            const colors = [];
+            
+            for (let i = 0; i < data.points.length; i += 3) {
+                const x = data.points[i];
+                const y = data.points[i + 1];
+                const z = data.points[i + 2];
+                const idx = i / 3;
+                
+                switch (colorMode) {
+                    case 'original':
+                        const colorIdx = idx * 3;
+                        colors.push(
+                            data.colors[colorIdx],
+                            data.colors[colorIdx + 1],
+                            data.colors[colorIdx + 2]
+                        );
+                        break;
+                        
+                    case 'height':
+                        const normalizedHeight = (z - data.bounds.minZ) / (data.bounds.maxZ - data.bounds.minZ);
+                        colors.push(normalizedHeight, 0.5, 1 - normalizedHeight);
+                        break;
+                        
+                    case 'normal':
+                        if (data.normals.length > 0) {
+                            const normalIdx = idx * 3;
+                            const nx = Math.abs(data.normals[normalIdx]);
+                            const ny = Math.abs(data.normals[normalIdx + 1]);
+                            const nz = Math.abs(data.normals[normalIdx + 2]);
+                            colors.push(nx, ny, nz);
+                        } else {
+                            colors.push(0.7, 0.7, 0.7);
+                        }
+                        break;
+                        
+                    case 'curvature':
+                        if (data.curvatures && data.curvatures.length > idx) {
+                            const curv = data.curvatures[idx];
+                            const range = data.curvatureRange.max - data.curvatureRange.min;
+                            const normalizedCurv = range > 0 ? (curv - data.curvatureRange.min) / range : 0.5;
+                            
+                            // Color gradient: blue (low) -> green -> red (high)
+                            if (normalizedCurv < 0.5) {
+                                const t = normalizedCurv * 2;
+                                colors.push(0, t, 1 - t);
+                            } else {
+                                const t = (normalizedCurv - 0.5) * 2;
+                                colors.push(t, 1 - t, 0);
+                            }
+                        } else {
+                            colors.push(0.5, 0.5, 0.5);
+                        }
+                        break;
+                        
+                    case 'uniform':
+                        colors.push(0.8, 0.8, 0.8);
+                        break;
+                }
+            }
+            
+            currentPointCloud.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            currentPointCloud.geometry.attributes.color.needsUpdate = true;
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Initialize everything
+        window.addEventListener('load', () => {
+            initScene();
+            
+            // Control managing 
+            document.getElementById('loadBtn').addEventListener('click', loadPointClouds);
+            document.getElementById('rawBtn').addEventListener('click', () => switchMode('raw'));
+            document.getElementById('normalBtn').addEventListener('click', () => switchMode('normal'));
+            document.getElementById('curvatureBtn').addEventListener('click', () => switchMode('curvature'));
+            document.getElementById('subsampleBtn').addEventListener('click', () => switchMode('subsample'));
+            document.getElementById('pointSize').addEventListener('input', updatePointSize);
+            document.getElementById('colorMode').addEventListener('change', updateColorMode);
+            window.addEventListener('resize', onWindowResize);
+            
+            updateModeButtons();
+        });
+    </script>
+</body>
+</html>
